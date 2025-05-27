@@ -129,27 +129,104 @@
                         </div>
                     </div>
 
-                    {% if crypto_available %}
                     <div class="card shadow mb-4">
                         <div class="card-header bg-primary text-white">
-                            <h5 class="mb-0"><i class="bi bi-shield-check"></i> Security Options</h5>
+                            <h5 class="mb-0"><i class="bi bi-shield-check"></i> Security & Authentication Options</h5>
                         </div>
                         <div class="card-body">
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="use_crypto" id="use_crypto" {{ 'checked' if crypto_available else 'disabled' }}>
-                                <label class="form-check-label" for="use_crypto">
-                                    Use cryptographic signatures (DKIM, ARC) {{ "(Requires dependencies)" if not crypto_available else "" }}
+                            <!-- Realistic Mode Section -->
+                            <div class="alert alert-info" role="alert">
+                                <h6 class="alert-heading"><i class="bi bi-info-circle"></i> Authentication Mode</h6>
+                                <p class="mb-2">Choose how authentication headers should be handled:</p>
+                            </div>
+                            
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="radio" name="auth_mode" id="realistic_mode" value="realistic" checked>
+                                <label class="form-check-label" for="realistic_mode">
+                                    <strong>🛡️ Realistic Mode (Recommended)</strong><br>
+                                    <small class="text-muted">Prevents authentication inconsistencies. No false DKIM/DMARC claims. Reduces detection risk in forensic analysis.</small>
                                 </label>
                             </div>
-                            <div class="form-check mt-2">
+                            
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="radio" name="auth_mode" id="legacy_mode" value="legacy">
+                                <label class="form-check-label" for="legacy_mode">
+                                    <strong>⚠️ Legacy Mode</strong><br>
+                                    <small class="text-muted">May create authentication inconsistencies. Higher detection risk. Use only for compatibility with older tools.</small>
+                                </label>
+                            </div>
+                            
+                            <hr>
+                            
+                            <!-- Crypto Options -->
+                            {% if crypto_available %}
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" name="use_crypto" id="use_crypto">
+                                <label class="form-check-label" for="use_crypto">
+                                    <strong>🔐 Use Real Cryptographic Signatures</strong><br>
+                                    <small class="text-muted">Generate real DKIM/ARC signatures for maximum authenticity. Requires crypto dependencies.</small>
+                                </label>
+                            </div>
+                            {% else %}
+                            <div class="alert alert-warning" role="alert">
+                                <small><i class="bi bi-exclamation-triangle"></i> <strong>Crypto features not available.</strong> Install requirements for real DKIM/ARC signatures.</small>
+                            </div>
+                            {% endif %}
+                            
+                            <div class="form-check">
                                 <input class="form-check-input" type="checkbox" name="is_new_email" id="is_new_email">
                                 <label class="form-check-label" for="is_new_email">
-                                    Treat as new email (removes In-Reply-To/References, generates new Message-ID)
+                                    <strong>📧 Treat as New Email</strong><br>
+                                    <small class="text-muted">Removes In-Reply-To/References headers and generates new Message-ID for standalone email.</small>
+                                </label>
+                            </div>
+
+                            <!-- Preservation Options -->
+                            <hr class="my-3">
+                            <h6 class="mb-3"><i class="bi bi-shield-lock"></i> Signature Preservation</h6>
+                            
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="checkbox" id="preserveSignatures" name="preserve_signatures" checked>
+                                <label class="form-check-label" for="preserveSignatures">
+                                    <strong>Preserve Original Signatures</strong>
+                                    <small class="d-block text-muted">
+                                        Keep existing DKIM/ARC signatures when not using crypto signing
+                                    </small>
+                                </label>
+                            </div>
+                            
+                            <div class="alert alert-warning" role="alert">
+                                <small>
+                                    <strong>Note:</strong> When preserving signatures, the email content 
+                                    should not be modified significantly, as this would invalidate the signatures.
+                                </small>
+                            </div>
+
+                            <!-- X-Header Options -->
+                            <hr class="my-3">
+                            <h6 class="mb-3"><i class="bi bi-list-ul"></i> X-Header Handling</h6>
+                            
+                            <div class="form-check mb-2">
+                                <input class="form-check-input" type="radio" name="x_header_mode" id="preserveXHeaders" value="preserve" checked>
+                                <label class="form-check-label" for="preserveXHeaders">
+                                    <strong>Preserve Original X-Headers</strong>
+                                    <small class="d-block text-muted">
+                                        Keep X-Google-Smtp-Source and X-Received exactly as in original
+                                    </small>
+                                </label>
+                            </div>
+                            
+                            <div class="form-check mb-3">
+                                <input class="form-check-input" type="radio" name="x_header_mode" id="alignXHeaders" value="align">
+                                <label class="form-check-label" for="alignXHeaders">
+                                    <strong>Generate Aligned X-Headers</strong>
+                                    <small class="d-block text-muted">
+                                        Create new X-headers that match your modifications
+                                    </small>
                                 </label>
                             </div>
                         </div>
                     </div>
-                    {% endif %}
 
                     <div class="d-grid gap-2 mb-4">
                         <button type="submit" class="btn btn-success btn-lg" id="processBtn">

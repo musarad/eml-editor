@@ -1,0 +1,27 @@
+Content-Type: multipart/mixed; boundary="===============0676303609882112787=="
+MIME-Version: 1.0
+From: original.sender@oldcompany.com
+To: original.recipient@oldcompany.com
+Subject: Original Invoice
+Date: Tue, 27 May 2025 23:22:50 +0300
+Message-ID: <original123@oldcompany.com>
+
+--===============0676303609882112787==
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+
+Please find attached invoice.
+--===============0676303609882112787==
+Content-Type: application/pdf
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="TIC_invoice_Apr17.pdf"
+
+JVBERi0xLjQKJUZha2UgUERGIGNvbnRlbnQgZm9yIGRlbW8K
+
+--===============0676303609882112787==
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment; filename="payment_terms.txt"
+Content-Type: text/plain; charset="us-ascii"; name="payment_terms.txt"
+
+Payment terms: Net 30 days
+--===============0676303609882112787==--

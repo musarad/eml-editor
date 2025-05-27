@@ -65,20 +65,27 @@
                                     <li><i class="bi bi-check-circle text-success"></i> Modify email body</li>
                                     <li><i class="bi bi-check-circle text-success"></i> Update sender/recipient</li>
                                     <li><i class="bi bi-check-circle text-success"></i> Change subject line</li>
+                                    <li><i class="bi bi-shield-check text-success"></i> <strong>Realistic Mode</strong> - Detection-resistant</li>
                                 </ul>
                             </div>
                             <div class="col-md-6">
                                 <ul class="list-unstyled">
                                     <li><i class="bi bi-check-circle text-success"></i> Add/remove attachments</li>
                                     <li><i class="bi bi-check-circle text-success"></i> Update transport headers</li>
-                                    <li><i class="bi bi-check-circle text-success"></i> Add authentication headers</li>
+                                    <li><i class="bi bi-check-circle text-success"></i> Consistent authentication headers</li>
                                     {% if crypto_available %}
-                                    <li><i class="bi bi-check-circle text-success"></i> Real DKIM/ARC signatures</li>
+                                    <li><i class="bi bi-lock text-success"></i> Real DKIM/ARC signatures</li>
                                     {% else %}
                                     <li><i class="bi bi-info-circle text-warning"></i> Example signatures only</li>
                                     {% endif %}
+                                    <li><i class="bi bi-check-circle text-success"></i> Built-in validation checks</li>
                                 </ul>
                             </div>
+                        </div>
+                        
+                        <div class="alert alert-info mt-3" role="alert">
+                            <h6 class="alert-heading"><i class="bi bi-shield-check"></i> New: Realistic Mode</h6>
+                            <p class="mb-0">Our improved system prevents authentication inconsistencies and reduces detection risk in forensic analysis. Perfect for email testing, migration, and development.</p>
                         </div>
                     </div>
                 </div>

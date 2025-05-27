@@ -140,7 +140,22 @@ def process_email():
         new_body = request.form.get('new_body', '').strip()
         use_crypto = request.form.get('use_crypto') == 'on'
         is_new_email = request.form.get('is_new_email') == 'on'
+        
+        # NEW: Get realistic mode setting (default to True for safety)
+        realistic_mode = request.form.get('realistic_mode', 'on') == 'on'
+        legacy_mode = request.form.get('legacy_mode') == 'on'
+        
+        # If legacy mode is explicitly selected, disable realistic mode
+        if legacy_mode:
+            realistic_mode = False
 
+        # NEW: Get preservation setting
+        preserve_signatures = request.form.get('preserve_signatures') == 'on'
+        
+        # NEW: Get X-header mode
+        x_header_mode = request.form.get('x_header_mode', 'preserve')
+        align_x_headers = (x_header_mode == 'align')
+        
         # Get original values from hidden fields to check for actual changes
         original_from = request.form.get('original_from', '').strip()
         original_to = request.form.get('original_to', '').strip()
@@ -238,22 +253,47 @@ def process_email():
         tool.modifications = modifications
         
         # Generate output filename
-        output_filename = f"modified_{filename}"
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        base_name = os.path.splitext(os.path.basename(filename))[0]
+        mode_suffix = 'realistic' if realistic_mode else 'legacy'
+        output_filename = f"{base_name}_{mode_suffix}_{timestamp}.eml"
         output_path = os.path.join(app.config['OUTPUT_FOLDER'], output_filename)
         
-        # Apply all modifications
-        tool.apply_modifications(output_path, use_crypto=use_crypto and CRYPTO_AVAILABLE, is_new_email=is_new_email)
+        # Ensure output directory exists
+        os.makedirs(app.config['OUTPUT_FOLDER'], exist_ok=True)
+        
+        # Apply modifications with preserve_signatures support
+        if realistic_mode and preserve_signatures and not use_crypto:
+            # Preserve original signatures in realistic mode
+            preserved = tool.editor.preserve_original_signatures()
+            tool.apply_modifications(output_path, use_crypto=use_crypto, 
+                                   is_new_email=is_new_email, 
+                                   realistic_mode=realistic_mode,
+                                   align_x_headers=align_x_headers)
+            # Signatures are restored within apply_modifications when appropriate
+        else:
+            tool.apply_modifications(output_path, use_crypto=use_crypto, 
+                                   is_new_email=is_new_email, 
+                                   realistic_mode=realistic_mode,
+                                   align_x_headers=align_x_headers)
         
         # Clean up temporary attachment files
         for att_path in new_attachments:
             if os.path.exists(att_path):
                 os.remove(att_path)
         
-        # Return success with download link
+        # Get validation results for user feedback
+        validation = tool.editor.validate_authentication_consistency()
+        validation_warnings = validation.get('warnings', [])
+        
+        # Return success with download link and validation info
         return jsonify({
             'success': True,
             'download_url': url_for('download_file', filename=output_filename),
-            'filename': output_filename
+            'filename': output_filename,
+            'realistic_mode': realistic_mode,
+            'validation_warnings': validation_warnings,
+            'crypto_used': use_crypto and CRYPTO_AVAILABLE
         })
     
     except Exception as e:

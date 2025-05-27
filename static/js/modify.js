@@ -9,6 +9,20 @@ document.getElementById('modifyForm').addEventListener('submit', async function(
     // Get form data
     const formData = new FormData(this);
     
+    // Add authentication mode to form data
+    const authMode = document.querySelector('input[name="auth_mode"]:checked').value;
+    if (authMode === 'realistic') {
+        formData.append('realistic_mode', 'on');
+    } else if (authMode === 'legacy') {
+        formData.append('legacy_mode', 'on');
+    }
+    
+    // Add X-header mode to form data
+    const xHeaderMode = document.querySelector('input[name="x_header_mode"]:checked');
+    if (xHeaderMode) {
+        formData.append('x_header_mode', xHeaderMode.value);
+    }
+    
     try {
         const response = await fetch('/process', {
             method: 'POST',
@@ -23,6 +37,9 @@ document.getElementById('modifyForm').addEventListener('submit', async function(
         if (result.success) {
             // Set download link
             document.getElementById('downloadLink').href = result.download_url;
+            
+            // Update success modal with validation info
+            updateSuccessModal(result);
             
             // Show success modal
             const successModal = new bootstrap.Modal(document.getElementById('successModal'));
@@ -42,6 +59,64 @@ document.getElementById('modifyForm').addEventListener('submit', async function(
         const errorModal = new bootstrap.Modal(document.getElementById('errorModal'));
         errorModal.show();
     }
+});
+
+// Update success modal with validation information
+function updateSuccessModal(result) {
+    const modalBody = document.querySelector('#successModal .modal-body');
+    
+    // Create status message
+    let statusHtml = '<p>Your email has been successfully modified.</p>';
+    
+    // Add mode information
+    if (result.realistic_mode) {
+        statusHtml += '<div class="alert alert-success alert-sm mb-3">';
+        statusHtml += '<i class="bi bi-shield-check"></i> <strong>Realistic Mode:</strong> Authentication headers are consistent and detection-resistant.';
+        statusHtml += '</div>';
+    } else {
+        statusHtml += '<div class="alert alert-warning alert-sm mb-3">';
+        statusHtml += '<i class="bi bi-exclamation-triangle"></i> <strong>Legacy Mode:</strong> May contain authentication inconsistencies.';
+        statusHtml += '</div>';
+    }
+    
+    // Add crypto information
+    if (result.crypto_used) {
+        statusHtml += '<div class="alert alert-info alert-sm mb-3">';
+        statusHtml += '<i class="bi bi-lock"></i> <strong>Cryptographic Signatures:</strong> Real DKIM/ARC signatures applied.';
+        statusHtml += '</div>';
+    }
+    
+    // Add validation warnings if any
+    if (result.validation_warnings && result.validation_warnings.length > 0) {
+        statusHtml += '<div class="alert alert-warning alert-sm mb-3">';
+        statusHtml += '<i class="bi bi-exclamation-triangle"></i> <strong>Validation Warnings:</strong><ul class="mb-0 mt-2">';
+        result.validation_warnings.forEach(warning => {
+            statusHtml += `<li>${warning}</li>`;
+        });
+        statusHtml += '</ul></div>';
+    }
+    
+    // Add download button
+    statusHtml += '<a id="downloadLink" href="' + result.download_url + '" class="btn btn-primary btn-lg">';
+    statusHtml += '<i class="bi bi-download"></i> Download Modified Email</a>';
+    
+    modalBody.innerHTML = statusHtml;
+}
+
+// Handle authentication mode changes
+document.addEventListener('DOMContentLoaded', function() {
+    const realisticMode = document.getElementById('realistic_mode');
+    const legacyMode = document.getElementById('legacy_mode');
+    
+    function updateModeDescription() {
+        // You can add dynamic descriptions here if needed
+        if (legacyMode.checked) {
+            console.log('Legacy mode selected - warning user about detection risks');
+        }
+    }
+    
+    if (realisticMode) realisticMode.addEventListener('change', updateModeDescription);
+    if (legacyMode) legacyMode.addEventListener('change', updateModeDescription);
 });
 
 // Auto-resize textarea

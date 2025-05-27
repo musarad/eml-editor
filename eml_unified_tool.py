@@ -369,132 +369,165 @@ class UnifiedEMLTool:
                     self.modifications['headers'][header_name] = header_value
                     print(f"✅ {header_name} will be set")
     
-    def apply_modifications(self, output_path: str, use_crypto: bool = False, is_new_email: bool = False):
-        """Apply all modifications and save the result"""
+    def apply_modifications(self, output_path: str, use_crypto: bool = False, is_new_email: bool = False, realistic_mode: bool = True, align_x_headers: bool = False):
+        """
+        Apply all modifications and save the result
+        
+        Args:
+            output_path: Path to save modified email
+            use_crypto: Whether to use real cryptographic signatures
+            is_new_email: Whether this is creating a new email from scratch
+            realistic_mode: Whether to use realistic authentication (prevents detection)
+            align_x_headers: Whether to regenerate X-headers to align with modifications (vs preserve)
+        """
         print("\n" + "="*60)
         print("APPLYING MODIFICATIONS")
         print("="*60)
         
-        # Ensure original_info is populated if not already
-        if not self.original_info:
-            self.original_info = self.extract_email_info()
-
-        is_new_email_flag = self.modifications.get('is_new_email', False)
-
-        # If it's flagged as a new email, remove MUA-specific headers from original
-        if is_new_email_flag:
-            headers_to_remove_for_new_email = [
-                'X-Mailer', # Common MUA header
-                'User-Agent', # Another common one
-                'X-Yandex-Front', # Yandex specific
-                'X-Yandex-TimeMark', # Yandex specific
-                # Add other MUA/client specific headers that shouldn't be in a "newly composed" email
-            ]
-            for header_name in headers_to_remove_for_new_email:
-                if header_name in self.editor.msg:
-                    del self.editor.msg[header_name]
-                    print(f"🗑️ Removed header for new email simulation: {header_name}")
-
-        # 1. Apply date modification
-        if 'date' in self.modifications:
-            print("📅 Updating date...")
-            # Parse the date string from modifications to get a datetime object for Message-ID generation
-            parsed_dt_for_msg_id = None
-            try:
-                parsed_dt_for_msg_id = email.utils.parsedate_to_datetime(self.modifications['date'])
-                if parsed_dt_for_msg_id.tzinfo is None or parsed_dt_for_msg_id.tzinfo.utcoffset(parsed_dt_for_msg_id) is None:
-                    parsed_dt_for_msg_id = parsed_dt_for_msg_id.astimezone()
-            except Exception as e_parse_date_mod:
-                print(f"Warning: Could not parse date from modifications for Message-ID: {e_parse_date_mod}")
-            
-            self.editor.modify_date(self.modifications['date']) # modify_date will call modify_message_id
-            # We need modify_date to pass the parsed_dt_for_msg_id and also use the new first_sending_smtp_server
-            # So, we might need to call modify_message_id directly here AFTER transport chain is updated (which sets first_sending_smtp_server)
-            # OR, modify_date itself needs access to first_sending_smtp_server if it's called before transport chain.
-            # Let's call modify_message_id separately after transport_chain is set.
-            # modify_date will still generate an initial Message-ID if called first, which will be overwritten.
+        if realistic_mode and not use_crypto:
+            print("🛡️  REALISTIC MODE ENABLED")
+            print("   - Authentication results will reflect actual signatures")
+            print("   - No false DKIM/DMARC pass claims")
+            print("   - Reduces detection risk in forensic analysis")
+            print("")
         
-        # 2. Apply body modification
-        if 'body' in self.modifications:
-            print("📝 Updating body...")
-            self.update_body(self.modifications['body'], self.original_info['body_info']['type'])
+        # 0. Preserve original signatures if in realistic mode
+        preserved_signatures = {}
+        preserved_x_headers = {}
+        if realistic_mode and not is_new_email:
+            print("🔐 Preserving original signatures...")
+            preserved_signatures = self.editor.preserve_original_signatures()
+            # Only preserve X-headers if not aligning them
+            if not align_x_headers:
+                preserved_x_headers = self.editor.preserve_x_headers()
         
-        # 3. Apply attachment modifications
-        if 'attachments' in self.modifications:
-            atts = self.modifications['attachments']
-            
-            # Remove attachments
-            if 'remove' in atts:
-                for filename in atts['remove']:
-                    print(f"📎 Removing {filename}...")
-                    self.editor.remove_attachment(filename)
-            
-            # Replace attachments
-            if 'replace' in atts:
-                for old_name, new_file in atts['replace']:
-                    print(f"📎 Replacing {old_name}...")
-                    self.editor.replace_attachment(old_name, new_file)
-            
-            # Add attachments
-            if 'add' in atts:
-                for file_path in atts['add']:
-                    print(f"📎 Adding {os.path.basename(file_path)}...")
-                    self.editor.add_attachment(file_path)
-        
-        # 4. Apply header modifications
+        # 1. Apply header modifications first
         if 'headers' in self.modifications:
-            print("🔧 Updating headers...")
+            print("📝 Updating headers...")
             self.editor.modify_basic_headers(self.modifications['headers'])
         
-        # 5. Strip threading headers if it's a new email
-        if is_new_email:
-            print("✂️ Stripping threading headers for new email...")
-            self.editor.strip_threading_headers()
-        
-        # 6. Update transport and authentication headers
-        print("🔄 Updating transport chain...")
-        self.update_transport_chain() # This will set self.first_sending_smtp_server
-
-        # Now, if it's a new email or date was changed, regenerate Message-ID with the correct domain and date
-        parsed_dt_for_msg_id_final = None
+        # 2. Update date and regenerate Message-ID consistently
         if 'date' in self.modifications:
-            try:
-                parsed_dt_for_msg_id_final = email.utils.parsedate_to_datetime(self.modifications['date'])
-            except: pass # Already handled in modify_date, but good to have obj here
-        elif self.original_info['headers'].get('Date'): # If date not changed, use original date
-            try:
-                parsed_dt_for_msg_id_final = email.utils.parsedate_to_datetime(self.original_info['headers'].get('Date'))
-            except: pass
+            print("📅 Updating date...")
+            self.editor.modify_date(self.modifications['date'])
         
-        if is_new_email or 'date' in self.modifications: # Always new ID for new email, or if date changed
-            print(f"🔧 Generating new Message-ID using domain: {self.first_sending_smtp_server} and date obj: {parsed_dt_for_msg_id_final}")
-            self.editor.modify_message_id(domain=self.first_sending_smtp_server, parsed_dt_obj=parsed_dt_for_msg_id_final)
-        elif 'Message-ID' not in self.editor.msg: # Ensure there is one if not new and not changed
-            self.editor.modify_message_id(domain=self.first_sending_smtp_server, parsed_dt_obj=parsed_dt_for_msg_id_final)
-
-        # After updating transport chain, remove potentially contradictory X-headers from original path
-        headers_to_remove_for_realism = [
-            'X-Originating-IP',
-            'X-Google-Smtp-Source', # If Google is not the new final hop, or if its value is old
-            'X-Yandex-Forward', # Example, add others as identified
-            'X-Yandex-Spam',
-            'X-Yandex-Front',
-            'X-Yandex-TimeMark',
-            'X-Received' # Remove original X-Received if a new transport chain is built
-            # Add other specific X-headers that might reveal original path or processing
-        ]
-        for header_name in headers_to_remove_for_realism:
-            if header_name in self.editor.msg:
-                del self.editor.msg[header_name]
-                print(f"🗑️ Removed header for realism: {header_name}")
-
+        # 3. Fix Message-ID domain if needed
+        print("🆔 Checking Message-ID consistency...")
+        self.editor.fix_message_id_domain()
+        
+        # 4. Update body content
+        if 'body' in self.modifications:
+            print("📄 Updating body content...")
+            original_body_type = self.original_info['body_info']['type']
+            self.update_body(self.modifications['body'], original_body_type)
+        
+        # 5. Handle attachments
+        if 'attachments' in self.modifications:
+            print("📎 Processing attachments...")
+            att_mods = self.modifications['attachments']
+            
+            # Remove attachments
+            if 'remove' in att_mods:
+                for filename in att_mods['remove']:
+                    self.editor.remove_attachment(filename)
+                    print(f"  ➖ Removed: {filename}")
+            
+            # Replace attachments  
+            if 'replace' in att_mods:
+                for old_file, new_file in att_mods['replace']:
+                    new_filename = os.path.basename(new_file)
+                    self.editor.replace_attachment(old_file, new_file, new_filename)
+                    print(f"  🔄 Replaced: {old_file} → {new_filename}")
+            
+            # Add new attachments
+            if 'add' in att_mods:
+                for file_path in att_mods['add']:
+                    filename = os.path.basename(file_path)
+                    self.editor.add_attachment(file_path, filename)
+                    print(f"  ➕ Added: {filename}")
+        
+        # 6. Update transport chain (creates realistic routing)
+        print("🔄 Updating transport chain...")
+        self.update_transport_chain()
+        
+        # 7. Manage Google headers based on transport chain
+        print("📧 Managing provider-specific headers...")
+        transport_chain = self.editor.msg.get_all('Received', [])
+        transport_info = []
+        for header in transport_chain:
+            info = {'by': '', 'from': ''}
+            by_match = re.search(r'by\s+([^\s]+)', header)
+            from_match = re.search(r'from\s+([^\s]+)', header)
+            if by_match:
+                info['by'] = by_match.group(1)
+            if from_match:
+                info['from'] = from_match.group(1)
+            transport_info.append(info)
+        
+        self.editor.manage_google_headers(transport_info)
+        
+        # 7.5. Handle X-headers based on mode and alignment preference
+        if align_x_headers:
+            # User wants X-headers to align with modifications
+            print("🔄 Generating X-headers aligned with modifications...")
+            self.editor.update_x_headers_for_alignment()
+        elif preserved_x_headers and realistic_mode:
+            # Preserve original X-headers
+            print("📋 Restoring preserved X-headers...")
+            self.editor.restore_x_headers(preserved_x_headers)
+        elif not realistic_mode:
+            # Legacy mode - generate aligned headers
+            print("🔄 Updating X-headers for alignment (legacy mode)...")
+            self.editor.update_x_headers_for_alignment()
+        
+        # 8. Update authentication headers (critical for realism)
         print("🔐 Updating authentication headers...")
-        self.update_authentication_headers(use_crypto)
+        if realistic_mode:
+            self.update_authentication_headers_realistic(use_crypto)
+        else:
+            self.update_authentication_headers(use_crypto)
         
-        # 7. Save the result
+        # 9. Restore preserved signatures if applicable
+        if preserved_signatures and realistic_mode and not use_crypto:
+            print("🔐 Restoring preserved signatures...")
+            self.editor.restore_preserved_signatures(preserved_signatures)
+        
+        # 10. Update transport-related headers
+        from_addr = self.modifications.get('headers', {}).get('From', self.original_info['headers'].get('From', 'sender@example.com'))
+        to_addr = self.modifications.get('headers', {}).get('To', self.original_info['headers'].get('To', 'recipient@example.com'))
+        
+        if ',' in to_addr:
+            primary_recipient = to_addr.split(',')[0].strip()
+        else:
+            primary_recipient = to_addr
+        
+        self.editor.modify_transport_headers({
+            'Delivered-To': primary_recipient,
+            'Return-Path': f'<{from_addr}>'
+        })
+        
+        # 11. Save the result
+        print("💾 Saving modified email...")
         self.editor.save_eml(output_path)
+        
+        # 12. Validate the result
+        print("\n🔍 VALIDATION RESULTS:")
+        validation = self.editor.validate_authentication_consistency()
+        
+        if validation['warnings']:
+            print("⚠️  Potential detection risks:")
+            for warning in validation['warnings']:
+                print(f"   - {warning}")
+        else:
+            print("✅ No obvious authentication inconsistencies detected")
+        
         print(f"\n✅ Modified email saved to: {output_path}")
-    
+        
+        if not realistic_mode and not use_crypto:
+            print("\n🚨 WARNING: Email contains authentication inconsistencies!")
+            print("   This email may be detected as tampered in forensic analysis.")
+            print("   Use --realistic or --crypto flags for better authenticity.")
+
     def update_body(self, new_body_content: str, original_body_main_type: str = 'text/plain'):
         """Update the email body, ensuring old body parts are removed."""
         print("----------------------------------------------------------")
@@ -505,88 +538,55 @@ class UnifiedEMLTool:
         
         msg = self.editor.msg
         
-        # 1. Prepare new body parts (plain and HTML)
-        new_plain_text_content = new_body_content
-        new_html_content = new_body_content
-
-        if original_body_main_type == 'text/html':
-            temp_plain = re.sub(r'<br\s*/?>', '\\n', new_body_content, flags=re.IGNORECASE)
-            new_plain_text_content = re.sub(r'<[^>]+>', '', temp_plain).strip()
-        elif original_body_main_type == 'text/plain':
-            new_html_content = new_body_content.replace('\\n', '<br>\\n')
-            new_html_content = f'<div>{new_html_content}</div>'
-
-        try: new_plain_text_content.encode('ascii'); plain_charset = 'us-ascii'; plain_cte = '7bit'
-        except UnicodeEncodeError: plain_charset = 'utf-8'; plain_cte = 'quoted-printable'
-        plain_part = email.mime.text.MIMEText(new_plain_text_content, 'plain', plain_charset)
-
-        try: new_html_content.encode('ascii'); html_charset = 'us-ascii'; html_cte = '7bit'
-        except UnicodeEncodeError: html_charset = 'utf-8'; html_cte = 'quoted-printable'
-        html_part = email.mime.text.MIMEText(new_html_content, 'html', html_charset)
-
-        print(f"DEBUG: plain_part.get_payload(decode=False):\n'''{plain_part.get_payload(decode=False)}'''")
-        print(f"DEBUG: html_part.get_payload(decode=False):\n'''{html_part.get_payload(decode=False)}'''")
-        
-        decoded_plain_payload = plain_part.get_payload(decode=True)
-        if decoded_plain_payload is not None:
-            try:
-                print(f"DEBUG: plain_part DECODED payload:\n'''{decoded_plain_payload.decode(plain_part.get_content_charset() or 'utf-8', 'replace')}'''")
-            except Exception as e:
-                print(f"DEBUG: Error decoding plain_part payload: {e}")
-        else:
-            print("DEBUG: plain_part.get_payload(decode=True) returned None")
-
-        decoded_html_payload = html_part.get_payload(decode=True)
-        if decoded_html_payload is not None:
-            try:
-                print(f"DEBUG: html_part DECODED payload:\n'''{decoded_html_payload.decode(html_part.get_content_charset() or 'utf-8', 'replace')}'''")
-            except Exception as e:
-                print(f"DEBUG: Error decoding html_part payload: {e}")
-        else:
-            print("DEBUG: html_part.get_payload(decode=True) returned None")
-
-        print("----------------------------------------------------------")
-        print(f"DEBUG: Content of new_plain_text_content for MIMEText:\n'''{new_plain_text_content}'''")
-        print(f"DEBUG: Charset for plain_part: {plain_charset}, CTE: {plain_cte}")
-        print(f"DEBUG: Content of new_html_content for MIMEText:\n'''{new_html_content}'''")
-        print(f"DEBUG: Charset for html_part: {html_charset}, CTE: {html_cte}")
-        print("----------------------------------------------------------")
-
+        # Create new alternative part for text/html content
         new_alternative_part = email.mime.multipart.MIMEMultipart('alternative')
-        new_alternative_part.attach(plain_part)
-        new_alternative_part.attach(html_part)
-        if 'boundary' in new_alternative_part.get_params(header='Content-Type'):
-            new_alternative_part.del_param('boundary', header='Content-Type')
-
+        
+        # Add plain text version
+        plain_text_part = email.mime.text.MIMEText(new_body_content, 'plain', 'utf-8')
+        new_alternative_part.attach(plain_text_part)
+        
+        # Add HTML version (simple conversion)
+        html_body = new_body_content.replace('\n', '<br>\n')
+        html_content = f"<html><body><p>{html_body}</p></body></html>"
+        html_text_part = email.mime.text.MIMEText(html_content, 'html', 'utf-8')
+        new_alternative_part.attach(html_text_part)
+        
+        # Validate Content-Type before processing
+        current_content_type = msg.get_content_type()
+        print(f"🔍 Current message Content-Type: {current_content_type}")
+        
+        # Fix any non-standard Content-Type issues
         if msg.is_multipart():
-            old_payload = msg.get_payload()
-            new_payload = []
-            body_part_added = False
-            for part_iter in old_payload:
-                is_old_body = False
-                if not part_iter.get_filename():
-                    if part_iter.get_content_type() in ['text/plain', 'text/html']:
-                        is_old_body = True
-                    elif part_iter.is_multipart() and part_iter.get_content_subtype() == 'alternative':
-                        is_old_body = True
-                
-                if is_old_body:
-                    if not body_part_added:
-                        new_payload.append(new_alternative_part)
-                        body_part_added = True
-                    print(f"Replacing old body part: {part_iter.get_content_type()}")
-                else:
-                    new_payload.append(part_iter)
+            content_type_header = msg.get('Content-Type', '')
+            if 'multipart/alt' in content_type_header:
+                print("⚠️  Detected non-standard 'multipart/alt' - fixing to 'multipart/alternative'")
+                # Fix the Content-Type header
+                fixed_content_type = content_type_header.replace('multipart/alt', 'multipart/alternative')
+                del msg['Content-Type']
+                msg['Content-Type'] = fixed_content_type
+        
+        if msg.is_multipart():
+            # Find and replace existing alternative part or add new one
+            payload = msg.get_payload()
+            alternative_part_index = None
             
-            if not body_part_added:
-                if msg.get_content_maintype() == 'mixed':
-                    new_payload.insert(0, new_alternative_part) 
-                else:
-                    new_payload.append(new_alternative_part)
-                print("No existing body part found to replace, adding new body.")
-
-            msg.set_payload(new_payload)
-            print("----------------------------------------------------------")
+            for i, part in enumerate(payload):
+                if isinstance(part, email.message.Message) and part.is_multipart():
+                    if part.get_content_subtype() == 'alternative':
+                        alternative_part_index = i
+                        break
+            
+            if alternative_part_index is not None:
+                # Replace existing alternative part
+                payload[alternative_part_index] = new_alternative_part
+                print("🔄 Replaced existing multipart/alternative part")
+            else:
+                # Add new alternative part
+                payload.append(new_alternative_part)
+                print("➕ Added new multipart/alternative part")
+            
+            msg.set_payload(payload)
+            
             print(f"DEBUG: Main message payload *after* set_payload (count: {len(msg.get_payload())}):")
             for i, p_after in enumerate(msg.get_payload()):
                 print(f"  Part {i} Content-Type: {p_after.get_content_type()}")
@@ -595,21 +595,30 @@ class UnifiedEMLTool:
                     for j, sub_p in enumerate(p_after.get_payload()):
                         print(f"      Sub-part {j} Content-Type: {sub_p.get_content_type()}")
             print("----------------------------------------------------------")
+            
+            # Force boundary regeneration for proper MIME structure
             if 'boundary' in msg.get_params(header='Content-Type'):
                 msg.del_param('boundary', header='Content-Type')
+                print("🔄 Forcing MIME boundary regeneration for standards compliance")
         else:
-            print("Original message was not multipart. Replacing with new multipart/alternative body.")
+            print("Original message was not multipart. Creating new multipart/mixed structure.")
+            # Preserve original headers but create proper MIME structure
             old_headers = dict(msg.items())
             new_root_msg = email.mime.multipart.MIMEMultipart('mixed')
-            for k,v in old_headers.items():
-                 if k.lower() not in ['content-type', 'content-transfer-encoding', 'mime-version']:
+            
+            # Copy headers except MIME-related ones
+            for k, v in old_headers.items():
+                if k.lower() not in ['content-type', 'content-transfer-encoding', 'mime-version']:
                     new_root_msg[k] = v
+            
+            # Ensure proper MIME-Version
             if 'MIME-Version' not in new_root_msg:
-                 new_root_msg['MIME-Version'] = '1.0'
+                new_root_msg['MIME-Version'] = '1.0'
             
             new_root_msg.attach(new_alternative_part)
             self.editor.msg = new_root_msg
             msg = self.editor.msg 
+            print("✅ Created proper multipart/mixed structure with multipart/alternative content")
             print("----------------------------------------------------------")
             print(f"DEBUG: New root message payload (count: {len(msg.get_payload())}):")
             for i, p_after in enumerate(msg.get_payload()):
@@ -625,6 +634,13 @@ class UnifiedEMLTool:
 
     def update_transport_chain(self):
         """Update transport chain based on modifications"""
+        # Check if original email routed through Google
+        original_received = self.editor.msg.get_all('Received', [])
+        routes_through_google_originally = any(
+            'google' in h.lower() or 'gmail' in h.lower() 
+            for h in original_received
+        )
+        
         # Get current date or use modified date
         # Ensure we have a datetime object to work with for timestamps
         base_datetime_obj = None
@@ -659,52 +675,47 @@ class UnifiedEMLTool:
         # Build transport chain - Hops are defined chronologically (earliest first)
         # create_complete_transport_chain will add them in reverse so earliest is bottom-most in EML
         
-        # Hop 1: Client to first internal SMTP server
-        hop1_datetime = base_datetime_obj
-        hop1_id = f'{int(hop1_datetime.timestamp())}.{random.randint(10000, 99999)}.client.{domain.replace(".", "")}'
-
-        # Hop 2: Internal SMTP server to external MX (e.g., Google)
-        # Add a small delay (e.g., 1 to 5 seconds)
-        delay_seconds_hop2 = random.randint(1, 5)
-        hop2_datetime = hop1_datetime + timedelta(seconds=delay_seconds_hop2)
-        hop2_id = f'gmx{int(hop2_datetime.timestamp())}.{random.randint(10000,99999)}'
-
-        # Hop 3 (Optional): Internal Google hop (simulating a bit more of Google's common path)
-        # Add another small delay
-        delay_seconds_hop3 = random.randint(1, 3) # Shorter delay for internal hop
-        hop3_datetime = hop2_datetime + timedelta(seconds=delay_seconds_hop3)
-        # Example internal Google ID structure (simplified)
-        hop3_id = f'{random.choice(["a","b","c","d","e","f"])}{random.randint(10,99)}csp{random.randint(100000,999999)}xyz'
-
-        # The server that would typically add the Authentication-Results header
-        # In this chain, it's the one receiving from the external world (e.g., mx.google.com)
-        self.auth_performing_server = 'mx.google.com' # This is hardcoded for this example chain structure
-                                                 # If the chain structure changes, this needs to be dynamic
+        # Determine routing server based on original email
+        if routes_through_google_originally:
+            # Route through Google like the original
+            receiving_server = 'mx.google.com'
+            gateway_server = f'mail-gw{random.randint(1,4)}.google.com'
+            self.auth_performing_server = 'mx.google.com'
+        else:
+            # Generic routing
+            receiving_server = f'mx.{domain}'
+            gateway_server = f'mail.{domain}'
+            self.auth_performing_server = receiving_server
 
         # The server that would typically generate the Message-ID (first hop from client's network)
         self.first_sending_smtp_server = f'smtp.{domain}' # from hop1
 
+        # Create hops with proper timing
+        hop1_datetime = base_datetime_obj
+        hop2_datetime = hop1_datetime + timedelta(seconds=random.randint(1, 5))
+        hop3_datetime = hop2_datetime + timedelta(seconds=random.randint(1, 3))
+        
         hops = [
             {
                 'from': f'client.{domain} [192.168.1.{random.randint(10,200)}]', # Slightly randomized internal IP
                 'by': f'smtp.{domain}',
                 'with': 'ESMTPS', # Common for first hop
-                'id': hop1_id,
+                'id': f'{int(hop1_datetime.timestamp())}.{random.randint(10000, 99999)}.client.{domain.replace(".", "")}',
                 'date': hop1_datetime
             },
             {
                 'from': f'smtp.{domain}',
-                'by': 'mx.google.com', # Simulating handover to Google
+                'by': receiving_server,
                 'with': 'ESMTPS',
-                'id': hop2_id,
+                'id': f'gmx{int(hop2_datetime.timestamp())}.{random.randint(10000,99999)}' if routes_through_google_originally else f'{int(hop2_datetime.timestamp())}.{random.randint(10000,99999)}',
                 'for': f'<{recipient_addr}>',
                 'date': hop2_datetime
             },
             {
-                'from': 'mx.google.com', # Simulating an internal Google hop
-                'by': f'mail-gw{random.randint(1,4)}.google.com [209.85.220.{random.randint(10,250)}]', # Example Google IP range
+                'from': receiving_server,
+                'by': f'{gateway_server} [209.85.220.{random.randint(10,250)}]' if routes_through_google_originally else gateway_server,
                 'with': 'SMTP',
-                'id': hop3_id,
+                'id': f'{random.choice(["a","b","c","d","e","f"])}{random.randint(10,99)}csp{random.randint(100000,999999)}xyz' if routes_through_google_originally else f'{int(hop3_datetime.timestamp())}.{random.randint(10000,99999)}',
                 'for': f'<{recipient_addr}>',
                 'date': hop3_datetime
             }
@@ -713,36 +724,36 @@ class UnifiedEMLTool:
         self.editor.create_complete_transport_chain(hops)
     
     def update_authentication_headers(self, use_crypto: bool):
-        """Update authentication headers"""
+        """Update authentication headers with consistency validation"""
         from_addr = self.modifications.get('headers', {}).get('From', self.original_info['headers'].get('From', 'sender@example.com'))
         domain = from_addr.split('@')[1] if '@' in from_addr else 'example.com'
-        
-        # Update authentication results
-        # Use the auth_performing_server determined by the transport chain logic
-        self.editor.modify_authentication_results(self.auth_performing_server, {
-            'spf': {'result': 'pass', 'domain': domain},
-            'dkim': {'result': 'pass', 'domain': domain},
-            'dmarc': {'result': 'pass', 'policy': 'none'},
-            'arc': {'result': 'pass'}
-        })
         
         if use_crypto and CRYPTO_AVAILABLE:
             # Use real crypto signing
             print("🔐 Applying real cryptographic signatures...")
             self.apply_crypto_signatures(domain)
+            
+            # Update authentication results to match real signatures
+            self.editor.modify_authentication_results(self.auth_performing_server, {
+                'spf': {'result': 'pass', 'domain': domain},
+                'dkim': {'result': 'pass', 'domain': domain},
+                'dmarc': {'result': 'pass', 'policy': 'none'},
+                'arc': {'result': 'pass'}
+            }, validate_consistency=True)
         else:
-            # Use example signatures
-            print("🔐 Applying example signatures...")
+            print("⚠️  Using placeholder authentication (not cryptographically valid)")
+            print("   For real authentication, use --crypto flag")
             
-            # Add example DKIM signature
-            self.editor.add_dkim_signature(domain, 'selector1')
+            # Update authentication results with warnings about placeholders
+            self.editor.modify_authentication_results(self.auth_performing_server, {
+                'spf': {'result': 'pass', 'domain': domain},
+                'dkim': {'result': 'none', 'domain': domain},  # ← Changed to 'none' since signature is placeholder
+                'dmarc': {'result': 'none', 'policy': 'none'},  # ← Changed to 'none'
+                'arc': {'result': 'none'}  # ← Changed to 'none'
+            }, validate_consistency=True)
             
-            # Add ARC headers
-            self.editor.modify_arc_headers(1, 'google.com', {
-                'spf': 'pass',
-                'dkim': 'pass',
-                'dmarc': 'pass'
-            })
+            # Add placeholder DKIM signature with clear warnings
+            self.editor.add_dkim_signature(domain, 'selector1', use_real_crypto=False)
     
     def apply_crypto_signatures(self, domain: str):
         """Apply real cryptographic signatures"""
@@ -777,6 +788,38 @@ class UnifiedEMLTool:
         
         print("✅ Real DKIM and ARC signatures applied")
 
+    def update_authentication_headers_realistic(self, use_crypto: bool):
+        """Update authentication headers in realistic mode - prevents false claims"""
+        from_addr = self.modifications.get('headers', {}).get('From', self.original_info['headers'].get('From', 'sender@example.com'))
+        domain = from_addr.split('@')[1] if '@' in from_addr else 'example.com'
+        
+        if use_crypto and CRYPTO_AVAILABLE:
+            # Use real crypto signing
+            print("🔐 Applying real cryptographic signatures...")
+            self.apply_crypto_signatures(domain)
+            
+            # Update authentication results to match real signatures
+            self.editor.modify_authentication_results(self.auth_performing_server, {
+                'spf': {'result': 'pass', 'domain': domain},
+                'dkim': {'result': 'pass', 'domain': domain},
+                'dmarc': {'result': 'pass', 'policy': 'none'},
+                'arc': {'result': 'pass'}
+            }, validate_consistency=True)
+        else:
+            print("🛡️  Using realistic authentication results (no false claims)")
+            
+            # In realistic mode, don't claim DKIM/DMARC pass without real signatures
+            self.editor.modify_authentication_results(self.auth_performing_server, {
+                'spf': {'result': 'pass', 'domain': domain},  # SPF can often be simulated
+                'dkim': {'result': 'none', 'domain': domain},  # No false claims
+                'dmarc': {'result': 'none', 'policy': 'none'}  # No false claims
+            }, validate_consistency=False)  # Skip validation since we're being honest
+            
+            print("   - SPF: pass (can be simulated)")
+            print("   - DKIM: none (no valid signature)")
+            print("   - DMARC: none (no DKIM/SPF alignment)")
+            print("   - No fake DKIM signatures added")
+
 
 def main():
     """Main function for the unified tool"""
@@ -806,8 +849,17 @@ Examples:
     parser.add_argument('--config', help='Load modifications from JSON config file')
     parser.add_argument('--new-email', action='store_true',
                        help='Treat as a new email (strip In-Reply-To/References headers)')
+    parser.add_argument('--realistic', action='store_true', default=True,
+                       help='Use realistic mode (prevents authentication inconsistencies) - DEFAULT')
+    parser.add_argument('--legacy', action='store_true',
+                       help='Use legacy mode (may create authentication inconsistencies - detectable)')
+    parser.add_argument('--align-x-headers', action='store_true',
+                       help='Generate new X-headers aligned with modifications (default: preserve original)')
     
     args = parser.parse_args()
+    
+    # Determine realistic mode
+    realistic_mode = args.realistic and not args.legacy
     
     # Check if input file exists
     if not os.path.exists(args.input):
@@ -817,10 +869,19 @@ Examples:
     # Create output filename if not provided
     if not args.output:
         base_name = os.path.splitext(args.input)[0]
-        args.output = f"{base_name}_modified.eml"
+        if realistic_mode:
+            args.output = f"{base_name}_realistic.eml"
+        else:
+            args.output = f"{base_name}_modified.eml"
     
     # Create tool instance
     print(f"📧 Loading email: {args.input}")
+    
+    if realistic_mode:
+        print("🛡️  REALISTIC MODE: Prevents authentication inconsistencies")
+    else:
+        print("⚠️  LEGACY MODE: May create detectable inconsistencies")
+    
     tool = UnifiedEMLTool(args.input)
     
     # Display current information
@@ -850,7 +911,8 @@ Examples:
         sys.exit(0)
     
     # Apply modifications
-    tool.apply_modifications(args.output, use_crypto=args.crypto, is_new_email=args.new_email)
+    tool.apply_modifications(args.output, use_crypto=args.crypto, 
+                           is_new_email=args.new_email, realistic_mode=realistic_mode, align_x_headers=args.align_x_headers)
     
     # Show final info
     print("\n" + "="*60)

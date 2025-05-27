@@ -8,6 +8,10 @@ import json
 import sys
 from datetime import datetime, timedelta
 import re
+import os
+from typing import Dict, List
+import random
+import email.utils
 
 
 class AdvancedEMLEditor(EMLEditor):
@@ -144,15 +148,14 @@ class AdvancedEMLEditor(EMLEditor):
         self.msg['ARC-Message-Signature'] = arc_msg_sig
         self.msg['ARC-Seal'] = arc_seal
     
-    def modify_authentication_results(self, domain: str, results: dict):
+    def modify_authentication_results(self, domain: str, results: dict, validate_consistency: bool = True):
         """
-        Create comprehensive Authentication-Results header
-        Example results: {
-            'spf': {'result': 'pass', 'domain': 'example.com'},
-            'dkim': {'result': 'pass', 'domain': 'example.com', 'selector': 's1'},
-            'dmarc': {'result': 'pass', 'policy': 'none'},
-            'arc': {'result': 'pass'}
-        }
+        Modify authentication headers with optional consistency validation
+        
+        Args:
+            domain: Authenticating domain
+            results: Dictionary of authentication results
+            validate_consistency: Whether to validate against actual signatures
         """
         parts = [domain]
         
@@ -190,23 +193,71 @@ class AdvancedEMLEditor(EMLEditor):
         # Build header
         auth_header = ";\n\t".join(parts)
         
-        del self.msg['Authentication-Results']
+        # Remove existing Authentication-Results header
+        if 'Authentication-Results' in self.msg:
+            del self.msg['Authentication-Results']
         self.msg['Authentication-Results'] = auth_header
+        
+        # Validate consistency if requested
+        if validate_consistency:
+            validation = self.validate_authentication_consistency()
+            if validation['warnings']:
+                print("⚠️  Authentication consistency warnings:")
+                for warning in validation['warnings']:
+                    print(f"   - {warning}")
+                print("   Consider using real cryptographic signing for authenticity")
     
-    def add_dkim_signature(self, domain: str, selector: str = 's1'):
+    def add_dkim_signature(self, domain: str, selector: str = 's1', use_real_crypto: bool = False):
         """
-        Add example DKIM-Signature header
-        Note: This is an example. Real DKIM requires private key signing.
+        Add DKIM-Signature header - either real cryptographic signature or clear placeholder
+        
+        Args:
+            domain: Signing domain
+            selector: DKIM selector
+            use_real_crypto: If True, attempts real DKIM signing. If False, adds clear placeholder.
+        
+        Note: For real DKIM signing, use eml_crypto_signer.py instead
         """
+        if use_real_crypto:
+            # Try to use real crypto signer
+            try:
+                from eml_crypto_signer import EMLCryptoSigner, EMLCryptoEditor
+                private_key_path = f'./dkim_keys/{domain}.{selector}.private.pem'
+                
+                if os.path.exists(private_key_path):
+                    # Use real crypto signing
+                    signer = EMLCryptoSigner(private_key_path, selector, domain)
+                    temp_path = 'temp_for_dkim_signing.eml'
+                    self.save_eml(temp_path)
+                    
+                    crypto_editor = EMLCryptoEditor(temp_path, signer)
+                    crypto_editor.add_dkim_signature()
+                    
+                    # Reload the signed message
+                    self.load_eml(temp_path)
+                    os.remove(temp_path)
+                    return
+                else:
+                    print(f"⚠️  DKIM private key not found at {private_key_path}")
+                    print("   Use eml_crypto_signer.py to generate keys first")
+            except ImportError:
+                print("⚠️  Crypto dependencies not available for real DKIM signing")
+        
+        # Create a clearly marked placeholder signature
         dkim_sig = (
             f"v=1; a=rsa-sha256; c=relaxed/relaxed; d={domain}; "
             f"s={selector}; h=from:to:subject:date:message-id; "
-            f"bh=ExampleBodyHash==; "
-            f"b=ExampleDKIMSignature=="
+            f"bh=PLACEHOLDER_BODY_HASH_NOT_VALID; "
+            f"b=PLACEHOLDER_SIGNATURE_NOT_VALID"
         )
         
-        del self.msg['DKIM-Signature']
+        # Remove existing DKIM signature
+        if 'DKIM-Signature' in self.msg:
+            del self.msg['DKIM-Signature']
         self.msg['DKIM-Signature'] = dkim_sig
+        
+        print("⚠️  Added PLACEHOLDER DKIM signature (not cryptographically valid)")
+        print("   For real DKIM signing, use use_real_crypto=True or eml_crypto_signer.py")
     
     def modify_x_headers(self, x_headers: dict):
         """
@@ -223,9 +274,14 @@ class AdvancedEMLEditor(EMLEditor):
                 del self.msg[header_name]
                 self.msg[header_name] = header_value
     
-    def create_complete_transport_chain(self, hops: list):
+    def create_complete_transport_chain(self, hops: list, preserve_original_hops: int = 2):
         """
-        Create a complete transport chain with multiple hops
+        Create a complete transport chain with multiple hops, optionally preserving some original hops
+        
+        Args:
+            hops: List of hop dictionaries to add
+            preserve_original_hops: Number of original Received headers to preserve (0 = replace all)
+        
         Example hops: [
             {
                 'from': 'client.example.com [192.168.1.100]',
@@ -237,10 +293,23 @@ class AdvancedEMLEditor(EMLEditor):
             }
         ]
         """
-        # Clear existing Received headers
+        # Preserve some original Received headers for realism
+        original_received = []
+        if preserve_original_hops > 0:
+            existing_received = self.msg.get_all('Received', [])
+            if existing_received:
+                # Keep the last N received headers (most recent ones)
+                original_received = existing_received[:preserve_original_hops]
+                print(f"🔄 Preserving {len(original_received)} original Received headers for realism")
+        
+        # Clear all existing Received headers
         del self.msg['Received']
         
-        # Add hops in reverse order (newest first)
+        # Add preserved headers first (they should appear first in the email)
+        for received_header in original_received:
+            self.msg['Received'] = received_header
+        
+        # Add new hops in reverse order (newest first)
         for hop in reversed(hops):
             parts = []
             
@@ -266,6 +335,281 @@ class AdvancedEMLEditor(EMLEditor):
             
             header = f"{' '.join(parts)}; {date_str}"
             self.msg['Received'] = header
+
+    def validate_authentication_consistency(self) -> Dict[str, bool]:
+        """
+        Validate that authentication results match actual signatures in the message
+        
+        Returns:
+            Dict with validation results for each authentication method
+        """
+        validation = {
+            'dkim_consistent': True,
+            'arc_consistent': True,
+            'warnings': []
+        }
+        
+        # Check DKIM consistency
+        auth_results = self.msg.get('Authentication-Results', '')
+        dkim_signature = self.msg.get('DKIM-Signature', '')
+        
+        if 'dkim=pass' in auth_results:
+            if not dkim_signature:
+                validation['dkim_consistent'] = False
+                validation['warnings'].append("Authentication-Results claims dkim=pass but no DKIM-Signature header found")
+            elif 'PLACEHOLDER' in dkim_signature or 'Example' in dkim_signature:
+                validation['dkim_consistent'] = False
+                validation['warnings'].append("Authentication-Results claims dkim=pass but DKIM-Signature is placeholder/example")
+        
+        # Check ARC consistency
+        arc_auth_results = self.msg.get('ARC-Authentication-Results', '')
+        arc_seal = self.msg.get('ARC-Seal', '')
+        arc_message_sig = self.msg.get('ARC-Message-Signature', '')
+        
+        if arc_auth_results and ('dkim=pass' in arc_auth_results or 'spf=pass' in arc_auth_results):
+            if not arc_seal or not arc_message_sig:
+                validation['arc_consistent'] = False
+                validation['warnings'].append("ARC-Authentication-Results present but missing ARC-Seal or ARC-Message-Signature")
+            elif 'Example' in arc_seal or 'PLACEHOLDER' in arc_seal:
+                validation['arc_consistent'] = False
+                validation['warnings'].append("ARC headers contain placeholder/example data")
+        
+        return validation
+
+    def preserve_original_signatures(self) -> Dict[str, str]:
+        """
+        Preserve original DKIM and ARC signatures
+        
+        Returns:
+            Dictionary with preserved signatures
+        """
+        preserved = {}
+        
+        # Preserve DKIM-Signature
+        dkim_sig = self.msg.get('DKIM-Signature', '')
+        if dkim_sig and 'PLACEHOLDER' not in dkim_sig and 'Example' not in dkim_sig:
+            preserved['DKIM-Signature'] = dkim_sig
+            print(f"🔐 Preserved original DKIM signature")
+        
+        # Preserve ARC headers
+        arc_seal = self.msg.get('ARC-Seal', '')
+        if arc_seal and 'Example' not in arc_seal:
+            preserved['ARC-Seal'] = arc_seal
+            
+        arc_msg_sig = self.msg.get('ARC-Message-Signature', '')
+        if arc_msg_sig and 'Example' not in arc_msg_sig:
+            preserved['ARC-Message-Signature'] = arc_msg_sig
+            
+        arc_auth = self.msg.get('ARC-Authentication-Results', '')
+        if arc_auth:
+            preserved['ARC-Authentication-Results'] = arc_auth
+            
+        if 'ARC-Seal' in preserved:
+            print(f"🔐 Preserved original ARC chain")
+            
+        return preserved
+    
+    def restore_preserved_signatures(self, preserved: Dict[str, str]):
+        """Restore preserved signatures to the message"""
+        for header, value in preserved.items():
+            if header in self.msg:
+                del self.msg[header]
+            self.msg[header] = value
+    
+    def manage_google_headers(self, transport_chain: List[Dict]):
+        """
+        Manage Google-specific headers based on transport chain
+        
+        Args:
+            transport_chain: List of transport hops
+        """
+        # Check if email actually routes through Google
+        routes_through_google = any(
+            'google.com' in hop.get('by', '') or 
+            'gmail.com' in hop.get('by', '') or
+            'googlemail.com' in hop.get('by', '')
+            for hop in transport_chain
+        )
+        
+        if routes_through_google:
+            # Generate appropriate Google headers
+            if 'X-Google-Smtp-Source' not in self.msg:
+                # Generate a realistic-looking ID
+                import string
+                chars = string.ascii_letters + string.digits + '+/='
+                google_id = ''.join(random.choice(chars) for _ in range(76))
+                self.msg['X-Google-Smtp-Source'] = google_id
+                print("✅ Added X-Google-Smtp-Source (routes through Google)")
+        else:
+            # Remove Google headers if not routing through Google
+            google_headers = ['X-Google-Smtp-Source', 'X-Google-DKIM-Signature']
+            for header in google_headers:
+                if header in self.msg:
+                    del self.msg[header]
+                    print(f"🗑️ Removed {header} (not routing through Google)")
+    
+    def fix_message_id_domain(self):
+        """Fix Message-ID to use proper domain instead of gmail.com"""
+        current_msg_id = self.msg.get('Message-ID', '')
+        from_header = self.msg.get('From', '')
+        
+        # Extract sender domain
+        if '@' in from_header:
+            from email.utils import parseaddr
+            _, email_addr = parseaddr(from_header)
+            if '@' in email_addr:
+                sender_domain = email_addr.split('@')[1]
+            else:
+                sender_domain = 'example.com'
+        else:
+            sender_domain = 'example.com'
+        
+        # Check if Message-ID uses wrong domain
+        if '@mail.gmail.com>' in current_msg_id or '@gmail.com>' in current_msg_id:
+            # Extract the ID part
+            if '<' in current_msg_id:
+                id_part = current_msg_id.split('<')[1].split('@')[0]
+            else:
+                id_part = str(int(datetime.now().timestamp()))
+            
+            # Generate new Message-ID with proper domain
+            new_msg_id = f"<{id_part}@{sender_domain}>"
+            
+            del self.msg['Message-ID']
+            self.msg['Message-ID'] = new_msg_id
+            print(f"🆔 Fixed Message-ID domain: {new_msg_id}")
+
+    def preserve_x_headers(self) -> Dict[str, List[str]]:
+        """
+        Preserve all X- headers from the original message
+        
+        Returns:
+            Dictionary of X-headers and their values
+        """
+        preserved_x = {}
+        
+        for header, value in self.msg.items():
+            if header.startswith('X-'):
+                if header not in preserved_x:
+                    preserved_x[header] = []
+                preserved_x[header].append(value)
+        
+        if preserved_x:
+            print(f"📋 Preserved {len(preserved_x)} X-headers")
+            
+        return preserved_x
+    
+    def restore_x_headers(self, preserved_x: Dict[str, List[str]]):
+        """Restore preserved X-headers to the message"""
+        for header, values in preserved_x.items():
+            # Remove existing instances
+            if header in self.msg:
+                del self.msg[header]
+            # Add back all values
+            for value in values:
+                self.msg[header] = value
+        
+        if preserved_x:
+            print(f"♻️ Restored {len(preserved_x)} X-headers")
+
+    def generate_aligned_x_headers(self, routes_through_google: bool = False) -> Dict[str, str]:
+        """
+        Generate X-headers that align with the current message state
+        
+        Args:
+            routes_through_google: Whether the message routes through Google
+            
+        Returns:
+            Dictionary of aligned X-headers
+        """
+        aligned_headers = {}
+        
+        if routes_through_google:
+            # Generate new X-Google-Smtp-Source that aligns with current message
+            import string
+            import hashlib
+            
+            # Create a hash based on current message content for uniqueness
+            msg_content = str(self.msg)
+            content_hash = hashlib.sha256(msg_content.encode()).digest()
+            
+            # Generate Google-style ID incorporating the content hash
+            chars = string.ascii_letters + string.digits + '+/='
+            # Use first 8 bytes of hash to seed the ID generation
+            seed_value = int.from_bytes(content_hash[:8], 'big')
+            random.seed(seed_value)  # Deterministic based on content
+            
+            google_id = ''.join(random.choice(chars) for _ in range(76))
+            aligned_headers['X-Google-Smtp-Source'] = google_id
+            
+            # Generate X-Received header
+            date_header = self.msg.get('Date', '')
+            if date_header:
+                try:
+                    msg_date = email.utils.parsedate_to_datetime(date_header)
+                except:
+                    msg_date = datetime.now()
+            else:
+                msg_date = datetime.now()
+                
+            # Generate X-Received in Google's format
+            x_received = (
+                f"by 2002:a05:6808:{random.randint(1000,9999)}:b0:"
+                f"{random.randint(100,999)}:{random.randint(1000000,9999999)} "
+                f"with SMTP id {random.choice(string.ascii_lowercase)}"
+                f"{random.randint(10,99)}-{random.randint(10000000,99999999)}"
+                f".{random.randint(100,999)}.{int(msg_date.timestamp())}; "
+                f"{msg_date.strftime('%a, %d %b %Y %H:%M:%S %z')}"
+            )
+            aligned_headers['X-Received'] = x_received
+            
+            print("🔄 Generated aligned Google X-headers based on current message state")
+            
+        # Reset random seed to avoid affecting other operations
+        random.seed()
+        
+        return aligned_headers
+    
+    def update_x_headers_for_alignment(self, force_google_headers: bool = None):
+        """
+        Update X-headers to align with current message modifications
+        
+        Args:
+            force_google_headers: If True, add Google headers. If False, remove them.
+                                If None, auto-detect based on transport chain.
+        """
+        # Auto-detect if we should have Google headers
+        if force_google_headers is None:
+            received_headers = self.msg.get_all('Received', [])
+            routes_through_google = any(
+                'google' in h.lower() or 'gmail' in h.lower() 
+                for h in received_headers
+            )
+        else:
+            routes_through_google = force_google_headers
+            
+        if routes_through_google:
+            # Generate aligned headers
+            aligned_headers = self.generate_aligned_x_headers(routes_through_google=True)
+            
+            # Update the headers
+            for header, value in aligned_headers.items():
+                if header in self.msg:
+                    del self.msg[header]
+                self.msg[header] = value
+                
+            print(f"✅ Updated {len(aligned_headers)} X-headers to align with modifications")
+        else:
+            # Remove Google-specific X-headers if not routing through Google
+            google_x_headers = ['X-Google-Smtp-Source', 'X-Received']
+            removed_count = 0
+            for header in google_x_headers:
+                if header in self.msg:
+                    del self.msg[header]
+                    removed_count += 1
+                    
+            if removed_count > 0:
+                print(f"🗑️ Removed {removed_count} Google X-headers (not routing through Google)")
 
 
 def example_usage():
@@ -443,7 +787,8 @@ def process_with_config(eml_path: str, config_path: str, output_path: str):
         auth = mods['authentication']
         editor.modify_authentication_results(
             auth.get('domain', 'mx.google.com'),
-            auth.get('results', {})
+            auth.get('results', {}),
+            validate_consistency=True
         )
     
     if 'x_headers' in mods:

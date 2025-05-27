@@ -1,0 +1,21 @@
+Content-Type: multipart/mixed; boundary="===============1462821404718727983=="
+MIME-Version: 1.0
+From: int.department@tic.ir
+To: 
+Subject: TIC invoice Apr 17
+Date: Tue, 23 May 2017 13:29:31 +0300
+Message-ID: <1495535371.cf5c10f5@oldcompany.com>
+
+--===============1462821404718727983==
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+
+Please find attached invoice.
+--===============1462821404718727983==
+Content-Type: text/plain
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="invoice_old.txt"
+
+SW52b2ljZSAjMTIzNDUKQW1vdW50OiAkMTAwLjAwCkRhdGU6IDIwMTctMDQtMDE=
+
+--===============1462821404718727983==--

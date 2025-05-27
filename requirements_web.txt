@@ -1,6 +1,22 @@
-# Web application dependencies
-Flask>=2.3.0
-Werkzeug>=2.3.0
+# EML Editor - Web Application Dependencies
+# Complete requirements for Flask web interface
 
-# Include all EML processing dependencies
--r requirements.txt 
+# === WEB FRAMEWORK ===
+Flask>=3.0.0
+Werkzeug>=3.0.0
+
+# === WEB SECURITY AND UTILITIES ===
+# For secure file handling and form processing
+MarkupSafe>=2.1.0
+Jinja2>=3.1.0
+itsdangerous>=2.2.0
+click>=8.1.0
+blinker>=1.9.0
+
+# === INCLUDE ALL CORE EML PROCESSING DEPENDENCIES ===
+-r requirements.txt
+
+# === PRODUCTION DEPLOYMENT (OPTIONAL) ===
+# Uncomment for production deployment
+# gunicorn>=21.0.0
+# waitress>=2.1.0 

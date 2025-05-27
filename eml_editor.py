@@ -423,30 +423,59 @@ class EMLEditor:
         return headers
     
     def modify_message_id(self, domain: str = None, parsed_dt_obj: Optional[datetime] = None):
-        """Generate and set a new Message-ID, optionally based on a given datetime."""
+        """
+        Modify Message-ID to be consistent with the email's date
+        
+        Args:
+            domain: Domain for Message-ID (extracted from From header if not provided)
+            parsed_dt_obj: Datetime object to use for Message-ID (uses email's Date header if not provided)
+        """
+        # Extract domain from existing Message-ID or From header if not provided
         if domain is None:
-            # Extract domain from From address
-            from_addr = self.msg.get('From', '')
-            match = re.search(r'@([^\s>]+)', from_addr)
-            domain = match.group(1) if match else 'example.com'
-        
-        # Generate new Message-ID
-        if parsed_dt_obj:
-            # Ensure the datetime object is timezone-aware for consistent timestamp generation
-            if parsed_dt_obj.tzinfo is None or parsed_dt_obj.tzinfo.utcoffset(parsed_dt_obj) is None:
-                dt_for_msg_id = parsed_dt_obj.astimezone() # Convert naive to local-aware
+            existing_msg_id = self.msg.get('Message-ID', '')
+            if '@' in existing_msg_id:
+                domain = existing_msg_id.split('@')[1].rstrip('>')
             else:
-                dt_for_msg_id = parsed_dt_obj
-            timestamp = dt_for_msg_id.timestamp()
-        else:
-            timestamp = datetime.now().timestamp()
+                from_header = self.msg.get('From', '')
+                if '@' in from_header:
+                    # Extract domain from From header
+                    parsed_from = parseaddr(from_header)
+                    if '@' in parsed_from[1]:
+                        domain = parsed_from[1].split('@')[1]
+                    else:
+                        domain = 'example.com'
+                else:
+                    domain = 'example.com'
         
-        random_part = hashlib.md5(str(timestamp).encode()).hexdigest()[:8]
-        new_message_id = f"<{int(timestamp)}.{random_part}@{domain}>"
+        # Use provided datetime or extract from email's Date header
+        if parsed_dt_obj is None:
+            date_header = self.msg.get('Date', '')
+            if date_header:
+                try:
+                    parsed_dt_obj = email.utils.parsedate_to_datetime(date_header)
+                except (TypeError, ValueError, AttributeError):
+                    print("⚠️  Could not parse Date header for Message-ID generation, using current time")
+                    parsed_dt_obj = datetime.now()
+            else:
+                print("⚠️  No Date header found for Message-ID generation, using current time")
+                parsed_dt_obj = datetime.now()
         
-        if 'Message-ID' in self.msg: # Check before deleting
+        # Generate timestamp based on email date (not current time)
+        timestamp = int(parsed_dt_obj.timestamp())
+        
+        # Create unique component using both timestamp and a hash of existing headers
+        # This ensures Message-ID changes when email content changes
+        unique_data = f"{timestamp}{self.msg.get('From', '')}{self.msg.get('Subject', '')}"
+        unique_hash = hashlib.md5(unique_data.encode()).hexdigest()[:8]
+        
+        new_message_id = f"<{timestamp}.{unique_hash}@{domain}>"
+        
+        # Remove existing Message-ID
+        if 'Message-ID' in self.msg:
             del self.msg['Message-ID']
         self.msg['Message-ID'] = new_message_id
+        
+        print(f"🆔 Generated Message-ID based on email date: {new_message_id}")
     
     def strip_threading_headers(self):
         """Remove headers related to email threading (In-Reply-To, References) and ensure a new Message-ID."""

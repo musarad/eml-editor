@@ -1,0 +1,46 @@
+Content-Type: multipart/mixed; boundary="===============1462821404718727983=="
+MIME-Version: 1.0
+From: int.department@tic.ir
+To: 
+Subject: TIC invoice Apr 17
+Date: Tue, 23 May 2017 13:29:31 +0300
+Message-ID: <1495535371.cf5c10f5@tic.ir>
+Delivered-To: billing@cellsigma.com
+Return-Path: <int.department@tic.ir>
+X-Originating-IP: [192.168.39.87]
+X-Mailer: Zimbra 8.6.0_GA_1194 (zclient/8.6.0_GA_1194)
+X-Virus-Scanned: amavisd-new at tic.ir
+Received: from mx.google.com by 10.159.59.83 with SMTP id j19csp1780682uah;
+ Tue, 23 May 2017 10:35:36  +0000
+Received: from mx1.tic.ir by mx.google.com with ESMTPS id
+ d17mr1768016wmd.90.1495535736487 for <billing@cellsigma.com>;
+ Tue, 23 May 2017 10:35:36  +0000
+Received: from zimbra.tic.ir [192.168.39.87] by mx1.tic.ir with ESMTP id
+ 1224472481.40492.1495535371917; Tue, 23 May 2017 14:59:31  +0000
+Authentication-Results: mx.google.com;
+	spf=pass smtp.mailfrom=tic.ir;
+	dkim=pass header.i=@tic.ir;
+	dmarc=pass policy.dmarc=none
+ARC-Authentication-Results: i=1; google.com; spf=pass; dkim=pass; dmarc=pass
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com;
+ s=arc-20160816; h=from:to:subject:date:message-id:mime-version;
+ bh=ExampleBase64Hash==; b=ExampleSignatureBase64==
+ARC-Seal: i=1; a=rsa-sha256; t=1748377370; cv=none; d=google.com;
+ s=arc-20160816; b=ExampleSealBase64==
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=tic.ir; s=s1;
+ h=from:to:subject:date:message-id; bh=PLACEHOLDER_BODY_HASH_NOT_VALID;
+ b=PLACEHOLDER_SIGNATURE_NOT_VALID
+
+--===============1462821404718727983==
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+
+Please find attached invoice.
+--===============1462821404718727983==
+Content-Type: text/plain
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="invoice_old.txt"
+
+SW52b2ljZSAjMTIzNDUKQW1vdW50OiAkMTAwLjAwCkRhdGU6IDIwMTctMDQtMDE=
+
+--===============1462821404718727983==--
