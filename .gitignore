@@ -1,0 +1,41 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.env
+
+# Virtual environments
+bin/
+include/
+lib/
+lib64/
+pip-selfcheck.json
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Project specific
+uploads/
+outputs/
+test_outputs/
+temp_*.eml
+*.eml.bak
+
+# Keys and sensitive data
+dkim_keys/
+*.pem
+*.key
+
+# Logs
+*.log 
