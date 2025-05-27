@@ -35,6 +35,7 @@ def set_pdf_metadata_dates(pdf_path: str, new_datetime_obj: datetime) -> bool:
     """
     Modifies the CreationDate and ModDate of a PDF file using PyMuPDF (fitz).
     The PDF dates will be set to 10 hours before the provided datetime.
+    Also clears other metadata fields like producer, creator, author, etc.
     
     Args:
         pdf_path (str): The path to the PDF file.
@@ -62,15 +63,26 @@ def set_pdf_metadata_dates(pdf_path: str, new_datetime_obj: datetime) -> bool:
         pdf_datetime = new_datetime_obj - timedelta(hours=10)
         pdf_date_str = _format_datetime_for_pdf_metadata(pdf_datetime)
         
-        metadata['creationDate'] = pdf_date_str
-        metadata['modDate'] = pdf_date_str
+        # Clear all metadata fields and set only the dates
+        clean_metadata = {
+            'producer': '',
+            'creator': '',
+            'author': '',
+            'title': '',
+            'subject': '',
+            'keywords': '',
+            'trapped': '',
+            'creationDate': pdf_date_str,
+            'modDate': pdf_date_str
+        }
         
-        doc.set_metadata(metadata)
+        doc.set_metadata(clean_metadata)
         doc.saveIncr()  # Use saveIncr() instead of save() for metadata changes
         doc.close()
         print(f"SUCCESS: PyMuPDF successfully updated metadata for {pdf_path}")
         print(f"  Email date: {new_datetime_obj.strftime('%Y-%m-%d %H:%M:%S %z')}")
         print(f"  PDF dates: {pdf_datetime.strftime('%Y-%m-%d %H:%M:%S %z')} (10 hours earlier)")
+        print(f"  All other metadata fields cleared (producer, creator, author, etc.)")
         return True
     except Exception as e:
         print(f"ERROR: Failed to modify PDF metadata for {pdf_path} using PyMuPDF: {e}")
