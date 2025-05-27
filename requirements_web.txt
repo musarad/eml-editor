@@ -1,0 +1,6 @@
+# Web application dependencies
+Flask>=2.3.0
+Werkzeug>=2.3.0
+
+# Include all EML processing dependencies
+-r requirements.txt 

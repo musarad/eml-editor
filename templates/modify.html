@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Modify Email - EML Editor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <nav class="navbar navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="{{ url_for('index') }}">
+                <i class="bi bi-envelope-open"></i> EML Editor
+            </a>
+            <span class="navbar-text text-white">
+                Modify Email
+            </span>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div class="row">
+            <div class="col-lg-8 mx-auto">
+                <div class="card shadow mb-4">
+                    <div class="card-header bg-info text-white">
+                        <h5 class="mb-0"><i class="bi bi-info-circle"></i> Current Email Information</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <p><strong>From:</strong> {{ current_from }}</p>
+                                <p><strong>To:</strong> {{ current_to }}</p>
+                            </div>
+                            <div class="col-md-6">
+                                <p><strong>Subject:</strong> {{ current_subject }}</p>
+                                <p><strong>Date:</strong> {{ current_date }}</p>
+                            </div>
+                        </div>
+                        {% if attachments %}
+                        <p><strong>Current Attachments:</strong></p>
+                        <ul class="list-unstyled">
+                            {% for att in attachments %}
+                            <li><i class="bi bi-paperclip"></i> {{ att }}</li>
+                            {% endfor %}
+                        </ul>
+                        {% endif %}
+                    </div>
+                </div>
+
+                <form id="modifyForm" enctype="multipart/form-data">
+                    <input type="hidden" name="filename" value="{{ filename }}">
+                    <input type="hidden" name="original_from" value="{{ current_from }}">
+                    <input type="hidden" name="original_to" value="{{ current_to }}">
+                    <input type="hidden" name="original_subject" value="{{ current_subject }}">
+                    <input type="hidden" name="original_date_header" value="{{ current_date }}">
+                    
+                    <div class="card shadow mb-4">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0"><i class="bi bi-pencil"></i> Modify Email Headers</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="new_from" class="form-label">From:</label>
+                                    <input type="email" class="form-control" id="new_from" name="new_from" 
+                                           placeholder="{{ current_from }}" value="{{ current_from }}">
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="new_to" class="form-label">To:</label>
+                                    <input type="text" class="form-control" id="new_to" name="new_to" 
+                                           placeholder="{{ current_to }}" value="{{ current_to }}">
+                                </div>
+                            </div>
+                            <div class="row">
+                                <div class="col-md-6 mb-3">
+                                    <label for="new_subject" class="form-label">Subject:</label>
+                                    <input type="text" class="form-control" id="new_subject" name="new_subject" 
+                                           placeholder="{{ current_subject }}" value="{{ current_subject }}">
+                                </div>
+                                <div class="col-md-6 mb-3">
+                                    <label for="new_date" class="form-label">Date and Time:</label>
+                                    <input type="datetime-local" class="form-control" id="new_date" name="new_date">
+                                    <small class="form-text text-muted">Leave empty to keep current date</small>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card shadow mb-4">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0"><i class="bi bi-file-text"></i> Email Body</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="mb-3">
+                                <label for="new_body">Body {{ "(HTML)" if current_body_type == "text/html" else "(Plain Text)" }}:</label>
+                                <textarea class="form-control" id="new_body" name="new_body" rows="15">{{ current_body }}</textarea>
+                                <input type="hidden" name="current_body_type" value="{{ current_body_type }}">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card shadow mb-4">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0"><i class="bi bi-paperclip"></i> Attachments</h5>
+                        </div>
+                        <div class="card-body">
+                            {% if attachments %}
+                            <div class="mb-3">
+                                <label class="form-label">Remove Attachments:</label>
+                                {% for att in attachments %}
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" name="remove_attachments" 
+                                           value="{{ att }}" id="remove_{{ loop.index }}">
+                                    <label class="form-check-label" for="remove_{{ loop.index }}">
+                                        Remove: {{ att }}
+                                    </label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                            
+                            <div class="mb-3">
+                                <label for="new_attachments" class="form-label">Add New Attachments:</label>
+                                <input type="file" class="form-control" id="new_attachments" name="new_attachments" multiple>
+                                <small class="form-text text-muted">You can select multiple files</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    {% if crypto_available %}
+                    <div class="card shadow mb-4">
+                        <div class="card-header bg-primary text-white">
+                            <h5 class="mb-0"><i class="bi bi-shield-check"></i> Security Options</h5>
+                        </div>
+                        <div class="card-body">
+                            <div class="form-check">
+                                <input class="form-check-input" type="checkbox" name="use_crypto" id="use_crypto" {{ 'checked' if crypto_available else 'disabled' }}>
+                                <label class="form-check-label" for="use_crypto">
+                                    Use cryptographic signatures (DKIM, ARC) {{ "(Requires dependencies)" if not crypto_available else "" }}
+                                </label>
+                            </div>
+                            <div class="form-check mt-2">
+                                <input class="form-check-input" type="checkbox" name="is_new_email" id="is_new_email">
+                                <label class="form-check-label" for="is_new_email">
+                                    Treat as new email (removes In-Reply-To/References, generates new Message-ID)
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+                    {% endif %}
+
+                    <div class="d-grid gap-2 mb-4">
+                        <button type="submit" class="btn btn-success btn-lg" id="processBtn">
+                            <i class="bi bi-gear"></i> Process Email
+                        </button>
+                        <a href="{{ url_for('index') }}" class="btn btn-secondary">
+                            <i class="bi bi-arrow-left"></i> Upload Different File
+                        </a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Modal -->
+    <div class="modal fade" id="loadingModal" data-bs-backdrop="static" data-bs-keyboard="false" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-body text-center p-4">
+                    <div class="spinner-border text-primary mb-3" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <h5>Processing Email...</h5>
+                    <p class="mb-0">Please wait while we apply your modifications.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Success Modal -->
+    <div class="modal fade" id="successModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-success text-white">
+                    <h5 class="modal-title"><i class="bi bi-check-circle"></i> Success!</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body text-center">
+                    <p>Your email has been successfully modified.</p>
+                    <a id="downloadLink" href="#" class="btn btn-primary btn-lg">
+                        <i class="bi bi-download"></i> Download Modified Email
+                    </a>
+                </div>
+                <div class="modal-footer">
+                    <a href="{{ url_for('index') }}" class="btn btn-secondary">Process Another File</a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Error Modal -->
+    <div class="modal fade" id="errorModal" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title"><i class="bi bi-exclamation-circle"></i> Error</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p id="errorMessage">An error occurred while processing your email.</p>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="{{ url_for('static', filename='js/modify.js') }}"></script>
+</body>
+</html> 

@@ -1,0 +1,60 @@
+Content-Type: multipart/mixed; boundary="===============6690048300214758873=="
+MIME-Version: 1.0
+Subject: Mixed Email with Attachment
+From: sender@example.com
+To: recipient@example.com
+Received: from mx.google.com by mail-gw3.google.com [209.85.220.130] with SMTP
+ id f58csp272475xyz for <recipient@example.com>;
+ Tue, 27 May 2025 21:02:22 +0300
+Received: from smtp.example.com by mx.google.com with ESMTPS id
+ gmx1748368941.95241 for <recipient@example.com>;
+ Tue, 27 May 2025 21:02:21 +0300
+Received: from client.example.com [192.168.1.99] by smtp.example.com with
+ ESMTPS id 1748368938.35342.client.examplecom; Tue, 27 May 2025 21:02:18 +0300
+Message-ID: <1748368938.e6bc0f0c@smtp.example.com>
+Authentication-Results: mx.google.com;
+	spf=pass smtp.mailfrom=example.com;
+	dkim=pass header.i=@example.com;
+	dmarc=pass policy.dmarc=none;
+	arc=pass
+DKIM-Signature: v=1; a=rsa-sha256; c=relaxed/relaxed; d=example.com;
+ s=selector1; h=from:to:subject:date:message-id; bh=ExampleBodyHash==;
+ b=ExampleDKIMSignature==
+ARC-Authentication-Results: i=1; google.com; spf=pass; dkim=pass; dmarc=pass
+ARC-Message-Signature: i=1; a=rsa-sha256; c=relaxed/relaxed; d=google.com;
+ s=arc-20160816; h=from:to:subject:date:message-id:mime-version;
+ bh=ExampleBase64Hash==; b=ExampleSignatureBase64==
+ARC-Seal: i=1; a=rsa-sha256; t=1748368938; cv=none; d=google.com;
+ s=arc-20160816; b=ExampleSealBase64==
+
+--===============6690048300214758873==
+Content-Type: multipart/alternative;
+ boundary="===============6375830429936673562=="
+
+--===============6375830429936673562==
+Content-Type: text/plain; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+
+Update from Test Case 2
+--===============6375830429936673562==
+Content-Type: text/html; charset="us-ascii"
+Content-Transfer-Encoding: 7bit
+
+Update from Test Case 2
+--===============6375830429936673562==--
+
+--===============6690048300214758873==
+Content-Type: application/octet-stream
+Content-Transfer-Encoding: base64
+Content-Disposition: attachment; filename="original_attachment.txt"
+
+VGhpcyBpcyBhIGR1bW15IGF0dGFjaG1lbnQu
+
+--===============6690048300214758873==
+Content-Transfer-Encoding: 7bit
+Content-Disposition: attachment; filename="another_new_attachment.txt"
+Content-Type: text/plain; charset="us-ascii";
+ name="another_new_attachment.txt"
+
+This is another new attachment for test case 2.
+--===============6690048300214758873==--

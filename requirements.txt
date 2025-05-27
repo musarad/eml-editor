@@ -1,0 +1,14 @@
+# Core dependencies for EML editing
+# No external dependencies needed for basic functionality
+
+# Optional: For real DKIM/ARC cryptographic signing
+dkimpy>=1.0.5
+authheaders>=0.14.1
+cryptography>=3.4.8
+dnspython>=2.1.0
+
+# Optional: For enhanced email parsing
+python-dateutil>=2.8.2
+
+# Optional: For PDF metadata editing
+PyMuPDF>=1.18.0 # For fitz module 
