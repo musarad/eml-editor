@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 import os
 
 # Attempt to import fitz (PyMuPDF), but don't fail at import time if not available.
@@ -34,11 +34,11 @@ def _format_datetime_for_pdf_metadata(dt_obj: datetime) -> str:
 def set_pdf_metadata_dates(pdf_path: str, new_datetime_obj: datetime) -> bool:
     """
     Modifies the CreationDate and ModDate of a PDF file using PyMuPDF (fitz).
-    Sets the PDF dates to 2 hours before the provided datetime (email date).
+    The PDF dates will be set to 10 hours before the provided datetime.
     
     Args:
         pdf_path (str): The path to the PDF file.
-        new_datetime_obj (datetime): The email datetime - PDF dates will be set to 2 hours before this.
+        new_datetime_obj (datetime): The email datetime - PDF dates will be 10 hours before this.
     Returns:
         bool: True if metadata was successfully updated (or if PyMuPDF is not available),
               False if an error occurred during PDF processing.
@@ -58,54 +58,31 @@ def set_pdf_metadata_dates(pdf_path: str, new_datetime_obj: datetime) -> bool:
         if metadata is None:
             metadata = {} 
 
-        # Import timedelta for date arithmetic
-        from datetime import timedelta
-        
-        # Subtract 2 hours from the email date for PDF creation/modification times
-        pdf_datetime = new_datetime_obj - timedelta(hours=2)
+        # Subtract 10 hours from the email datetime for PDF creation/modification
+        pdf_datetime = new_datetime_obj - timedelta(hours=10)
         pdf_date_str = _format_datetime_for_pdf_metadata(pdf_datetime)
         
-        # Clear all metadata fields except dates
-        metadata['producer'] = ''
-        metadata['creator'] = ''
-        metadata['author'] = ''
-        metadata['title'] = ''
-        metadata['subject'] = ''
-        metadata['keywords'] = ''
-        metadata['trapped'] = ''
-        
-        # Set the date fields
         metadata['creationDate'] = pdf_date_str
         metadata['modDate'] = pdf_date_str
         
         doc.set_metadata(metadata)
-        
-        # Save to a temporary file first
-        import tempfile
-        temp_fd, temp_path = tempfile.mkstemp(suffix='.pdf')
-        os.close(temp_fd)
-        
-        doc.save(temp_path)
+        doc.saveIncr()  # Use saveIncr() instead of save() for metadata changes
         doc.close()
-        
-        # Replace original with modified version
-        import shutil
-        shutil.move(temp_path, pdf_path)
-        
         print(f"SUCCESS: PyMuPDF successfully updated metadata for {pdf_path}")
         print(f"  Email date: {new_datetime_obj.strftime('%Y-%m-%d %H:%M:%S %z')}")
-        print(f"  PDF dates set to: {pdf_datetime.strftime('%Y-%m-%d %H:%M:%S %z')} (2 hours earlier)")
+        print(f"  PDF dates: {pdf_datetime.strftime('%Y-%m-%d %H:%M:%S %z')} (10 hours earlier)")
         return True
     except Exception as e:
         print(f"ERROR: Failed to modify PDF metadata for {pdf_path} using PyMuPDF: {e}")
         return False
 
-def clear_pdf_metadata(pdf_path: str) -> bool:
+def clear_pdf_metadata(pdf_path: str, keep_dates: bool = False) -> bool:
     """
     Clears all metadata fields in a PDF file using PyMuPDF (fitz).
     
     Args:
         pdf_path (str): The path to the PDF file.
+        keep_dates (bool): If True, keeps creation and modification dates.
     Returns:
         bool: True if metadata was successfully cleared,
               False if an error occurred during PDF processing.
@@ -121,8 +98,9 @@ def clear_pdf_metadata(pdf_path: str) -> bool:
 
     try:
         doc = fitz.open(pdf_path)
+        metadata = doc.metadata or {}
         
-        # Create empty metadata dictionary - all fields set to empty strings
+        # Create empty metadata dictionary
         empty_metadata = {
             'producer': '',
             'creator': '',
@@ -130,39 +108,21 @@ def clear_pdf_metadata(pdf_path: str) -> bool:
             'title': '',
             'subject': '',
             'keywords': '',
-            'creationDate': '',
-            'modDate': '',
             'trapped': ''
         }
         
-        # Set all metadata fields to empty strings
+        # If keeping dates, preserve them
+        if keep_dates and metadata:
+            empty_metadata['creationDate'] = metadata.get('creationDate', '')
+            empty_metadata['modDate'] = metadata.get('modDate', '')
+        else:
+            empty_metadata['creationDate'] = ''
+            empty_metadata['modDate'] = ''
+        
+        # Set all metadata fields
         doc.set_metadata(empty_metadata)
-        
-        # Save to a temporary file first
-        import tempfile
-        temp_fd, temp_path = tempfile.mkstemp(suffix='.pdf')
-        os.close(temp_fd)
-        
-        # Save with garbage=4 to remove unused objects and clean the file
-        doc.save(temp_path, garbage=4, deflate=True)
+        doc.saveIncr()  # Use saveIncr() for metadata changes
         doc.close()
-        
-        # Now open the saved file again and clear metadata that might have been added during save
-        doc2 = fitz.open(temp_path)
-        doc2.set_metadata(empty_metadata)
-        
-        # Save again to final location
-        temp_fd2, temp_path2 = tempfile.mkstemp(suffix='.pdf')
-        os.close(temp_fd2)
-        doc2.save(temp_path2, garbage=4, deflate=True)
-        doc2.close()
-        
-        # Replace original with modified version
-        import shutil
-        shutil.move(temp_path2, pdf_path)
-        
-        # Clean up first temp file
-        os.remove(temp_path)
         
         print(f"SUCCESS: Cleared all metadata for {pdf_path}")
         return True
