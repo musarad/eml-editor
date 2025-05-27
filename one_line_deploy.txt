@@ -1,0 +1,20 @@
+# One-line remote deployment command
+# Copy and paste this entire command to deploy to your server:
+
+ssh root@138.199.149.235 'apt-get update -y && apt-get install -y python3 python3-pip python3-venv git curl && cd /opt && ([ -d "eml-editor" ] && cd eml-editor && git pull origin main || git clone https://github.com/musarad/eml-editor.git && cd eml-editor) && python3 -m venv venv && source venv/bin/activate && pip install --upgrade pip && pip install -r requirements_web.txt && mkdir -p uploads outputs dkim_keys && cat > /etc/systemd/system/eml-editor.service << EOF
+[Unit]
+Description=EML Editor Web Application
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/eml-editor
+Environment="PATH=/opt/eml-editor/venv/bin"
+ExecStart=/opt/eml-editor/venv/bin/python /opt/eml-editor/web_app.py
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+systemctl daemon-reload && systemctl enable eml-editor && systemctl stop eml-editor 2>/dev/null || true && systemctl start eml-editor && echo "Deployment complete! Access at: http://138.199.149.235:8080"' 
